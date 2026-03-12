@@ -98,7 +98,7 @@ interface NotificationContext {
   assistantText: string;
 }
 
-const DEFAULT_CONFIG_PATH = `${Bun.env.HOME ?? ""}/.config/opencode/webhook-notify-config.json`;
+const DEFAULT_CONFIG_PATH = `${Bun.env.HOME ?? ""}/.config/opencode/opencode-webhook-notify.json`;
 
 export const WebhookNotificationPlugin: Plugin = async ({ client, project }) => {
   return {

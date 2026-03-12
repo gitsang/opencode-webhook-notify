@@ -23,7 +23,7 @@ Add it to your `opencode.json` plugin list:
 
 Configure webhook settings only in:
 
-- `~/.config/opencode/webhook-notify-config.json`
+- `~/.config/opencode/opencode-webhook-notify.json`
 
 ### Config schema
 
