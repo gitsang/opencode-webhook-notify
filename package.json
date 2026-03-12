@@ -1,0 +1,31 @@
+{
+  "name": "opencode-webhook-notify",
+  "version": "0.1.0",
+  "description": "OpenCode plugin that sends customizable webhook notifications on session completion and permission requests.",
+  "main": "src/index.ts",
+  "module": "src/index.ts",
+  "type": "module",
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "keywords": [
+    "opencode",
+    "plugin",
+    "webhook",
+    "notification",
+    "ai"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "@opencode-ai/plugin": "*"
+  },
+  "devDependencies": {
+    "@opencode-ai/plugin": "latest",
+    "@types/bun": "latest",
+    "typescript": "latest"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}
