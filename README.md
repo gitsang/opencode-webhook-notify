@@ -11,11 +11,15 @@ Sends webhook notifications for:
 
 ## Installation
 
+```
+npm i -g opencode-webhook-notify@latest
+```
+
 Add it to your `opencode.json` plugin list:
 
 ```json
 {
-  "plugin": ["opencode-webhook-notify@0.1.0"]
+  "plugin": ["opencode-webhook-notify@latest"]
 }
 ```
 
