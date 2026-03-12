@@ -50,7 +50,7 @@ Configure webhook settings only in:
         "Session": "{{session.id}}"
       },
       "body": {
-        "text": "### {{title}}\n\n{{description}}\n\n**Model**: {{model.name}}\n**Session**: {{session.id}}\n\n### Permission Required\n\nCommand: `{{permission.command}}`"
+        "text": "### {{title}}\n\n{{description}}\n\n**Model**: {{model.name}}\n**Session**: {{session.id}}\n\n### Response Completed\n\n{{assistant.text}}"
       }
     }
   }
@@ -74,6 +74,30 @@ If `events.<event>.headers` or `events.<event>.body` is missing, the plugin fall
 - `{{color}}`
 - `{{permission.command}}`
 - `{{timestamp}}`
+
+### Example
+
+#### Mattermost
+
+```json
+{
+  "enabled": true,
+  "webhookUrl": "https://mattermost.example.com/hooks/token-here",
+  "timeoutMs": 10000,
+  "events": {
+    "idle": {
+      "body": {
+        "text": "### {{title}}\n\n{{description}}\n---\n**Model**: {{model.name}}\n**Session**: {{session.id}}"
+      }
+    },
+    "permission": {
+      "body": {
+        "text": "### {{title}}\n\n{{description}}\n---\n**Model**: {{model.name}}\n**Session**: {{session.id}}"
+      }
+    }
+  }
+}
+```
 
 ## Development
 
