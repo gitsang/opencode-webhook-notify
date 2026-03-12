@@ -25,7 +25,7 @@ Add it to your `opencode.json` plugin list:
 
 ## Configuration
 
-Configure webhook settings only in:
+Configure webhook settings in:
 
 - `~/.config/opencode/opencode-webhook-notify.json`
 
