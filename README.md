@@ -11,6 +11,7 @@ OpenCode plugin that sends customizable webhook notifications on session complet
 - Supports config from `opencode.json` and fallback config file
 - Supports custom headers and request timeout
 - Supports JSON payload templating with token replacement
+- Supports built-in Mattermost payload templates (`{"text":"..."}`)
 
 ## Installation
 
@@ -41,9 +42,15 @@ You can also store fallback config at:
   "webhookUrl": "https://example.com/webhook",
   "username": "OpenCode Notifier",
   "avatarUrl": "https://opencode.ai/logo.png",
+  "defaultTemplate": "mattermost",
   "timeoutMs": 10000,
   "headers": {
     "X-API-Key": "your-secret"
+  },
+  "mattermostTemplate": "### {{title}}\n\n{{description}}\n\n**Model**: {{model.name}}\n**Session**: {{session.id}}",
+  "mattermostTemplates": {
+    "idle": "### Response Completed\n\n{{assistant.text}}",
+    "permission": "### Permission Required\n\nCommand: `{{permission.command}}`"
   },
   "payloadTemplate": {
     "event": "{{event.type}}",
@@ -67,7 +74,35 @@ You can also store fallback config at:
 }
 ```
 
-If `payloadTemplates.<event>` exists, it is used for that event. Otherwise `payloadTemplate` is used. If no template is defined, a default payload is sent (including a Discord-compatible object in `discord`).
+Template priority:
+
+1. `payloadTemplates.<event>`
+2. `payloadTemplate`
+3. `mattermostTemplates.<event>`
+4. `mattermostTemplate`
+5. `defaultTemplate: "mattermost"` fallback
+6. Built-in default payload (includes Discord-compatible `discord` object)
+
+### Mattermost example
+
+If you set `defaultTemplate` to `"mattermost"`, the plugin sends a Mattermost-compatible payload like this:
+
+```json
+{
+  "text": "### Hello\n\nThis is some text\nThis is more text.",
+  "props": {
+    "card": "Session: ...",
+    "notificationType": "idle",
+    "eventType": "session.idle"
+  }
+}
+```
+
+Equivalent webhook test (as you shared):
+
+```bash
+curl -X POST -H 'Content-Type: application/json' https://mattermost.example/hooks/xxxx -d '{"text":"### Hello\n\nThis is some text\nThis is more text."}'
+```
 
 ### Supported template tokens
 

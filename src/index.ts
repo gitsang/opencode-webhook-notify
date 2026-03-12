@@ -7,8 +7,14 @@ interface WebhookNotifyConfig {
   webhookUrl?: string;
   username?: string;
   avatarUrl?: string;
+  defaultTemplate?: "discord" | "mattermost";
   headers?: Record<string, string>;
   timeoutMs?: number;
+  mattermostTemplate?: string;
+  mattermostTemplates?: {
+    idle?: string;
+    permission?: string;
+  };
   payloadTemplate?: JsonValue;
   payloadTemplates?: {
     idle?: JsonValue;
@@ -178,9 +184,13 @@ async function handleNotification(
     };
 
     const payloadTemplate = config.payloadTemplates?.[type] ?? config.payloadTemplate;
+    const mattermostTemplate = config.mattermostTemplates?.[type] ?? config.mattermostTemplate;
+
     const payload = payloadTemplate
       ? renderTemplate(payloadTemplate, context)
-      : createDefaultPayload(config, context);
+      : config.defaultTemplate === "mattermost" || typeof mattermostTemplate === "string"
+        ? createMattermostPayload(context, mattermostTemplate)
+        : createDefaultPayload(config, context);
 
     await postWebhook(config, payload);
   } catch (error) {
@@ -262,8 +272,26 @@ function normalizeConfig(input: Record<string, unknown>): WebhookNotifyConfig {
     webhookUrl: typeof input.webhookUrl === "string" ? input.webhookUrl : undefined,
     username: typeof input.username === "string" ? input.username : undefined,
     avatarUrl: typeof input.avatarUrl === "string" ? input.avatarUrl : undefined,
+    defaultTemplate:
+      input.defaultTemplate === "discord" || input.defaultTemplate === "mattermost"
+        ? input.defaultTemplate
+        : undefined,
     headers,
     timeoutMs: typeof input.timeoutMs === "number" ? input.timeoutMs : undefined,
+    mattermostTemplate:
+      typeof input.mattermostTemplate === "string" ? input.mattermostTemplate : undefined,
+    mattermostTemplates: isRecord(input.mattermostTemplates)
+      ? {
+          idle:
+            typeof input.mattermostTemplates.idle === "string"
+              ? input.mattermostTemplates.idle
+              : undefined,
+          permission:
+            typeof input.mattermostTemplates.permission === "string"
+              ? input.mattermostTemplates.permission
+              : undefined,
+        }
+      : undefined,
     payloadTemplate: isJsonValue(input.payloadTemplate) ? input.payloadTemplate : undefined,
     payloadTemplates: isRecord(input.payloadTemplates)
       ? {
@@ -474,6 +502,43 @@ function createDefaultPayload(config: WebhookNotifyConfig, context: Notification
     pendingCommand: context.pendingCommand,
     timestamp: context.timestamp,
     discord: discordPayload,
+  };
+}
+
+function createMattermostPayload(context: NotificationContext, template?: string): JsonObject {
+  const fallback =
+    context.notificationType === "permission"
+      ? [
+          `### ${context.title}`,
+          "",
+          context.description,
+          "",
+          `**Command**: \`${context.pendingCommand || "Check terminal for details"}\``,
+          `**Model**: ${context.modelName}`,
+          `**Context Usage**: ${context.contextUsage}`,
+          `**Total Tokens**: ${context.totalTokens.toLocaleString()}`,
+          `**Session**: ${context.sessionId}`,
+        ].join("\n")
+      : [
+          `### ${context.title}`,
+          "",
+          context.assistantText,
+          "",
+          `**Model**: ${context.modelName}`,
+          `**Context Usage**: ${context.contextUsage}`,
+          `**Total Tokens**: ${context.totalTokens.toLocaleString()}`,
+          `**Session**: ${context.sessionId}`,
+        ].join("\n");
+
+  const text = typeof template === "string" ? replaceTokens(template, context) : fallback;
+
+  return {
+    text,
+    props: {
+      card: `Session: ${context.sessionId}`,
+      notificationType: context.notificationType,
+      eventType: context.eventType,
+    },
   };
 }
 
