@@ -101,6 +101,8 @@ interface NotificationContext {
 const DEFAULT_CONFIG_PATH = `${Bun.env.HOME ?? ""}/.config/opencode/opencode-webhook-notify.json`;
 
 export const WebhookNotificationPlugin: Plugin = async ({ client, project }) => {
+  console.log("WebHook Notification Plugin initialized!")
+
   return {
     event: async ({ event }) => {
       if (!isRecord(event) || typeof event.type !== "string") {
@@ -213,8 +215,8 @@ function getSessionClient(client: unknown):
   }
 
   return {
-    get: (args) => get(args) as Promise<unknown>,
-    messages: (args) => messages(args) as Promise<unknown>,
+    get: (args) => get.call(maybeSession, args) as Promise<unknown>,
+    messages: (args) => messages.call(maybeSession, args) as Promise<unknown>,
   };
 }
 
