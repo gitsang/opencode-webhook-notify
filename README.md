@@ -9,6 +9,8 @@ Sends webhook notifications for:
 - `session.idle` (response/session completion)
 - `permission.asked` (permission required)
 
+Can also receive inbound webhook requests and forward them into a session as a new user message.
+
 ## Installation
 
 ```
@@ -36,6 +38,14 @@ Configure webhook settings in:
   "enabled": true,
   "webhookUrl": "https://example.com/webhook",
   "timeoutMs": 10000,
+  "inbound": {
+    "enabled": true,
+    "host": "127.0.0.1",
+    "port": 8787,
+    "path": "/webhook/session-message",
+    "token": "replace-with-random-secret",
+    "mode": "promptAsync"
+  },
   "events": {
     "idle": {
       "headers": {
@@ -58,6 +68,54 @@ Configure webhook settings in:
 ```
 
 If `events.<event>.headers` or `events.<event>.body` is missing, the plugin falls back to a default text payload and standard `Content-Type: application/json` header.
+
+### Inbound webhook (send message to session)
+
+When `inbound.enabled` is `true`, the plugin starts a local HTTP endpoint:
+
+- URL: `http://<host>:<port><path>`
+- Method: `POST`
+- Auth:
+  - If `inbound.token` is set, provide either:
+    - `Authorization: Bearer <token>`
+    - `X-Webhook-Token: <token>`
+
+#### Inbound payload schema
+
+```json
+{
+  "sessionId": "ses_xxx",
+  "text": "Please continue from the previous task",
+  "noReply": false,
+  "agent": "build",
+  "model": {
+    "providerID": "openrouter",
+    "modelID": "anthropic/claude-sonnet-4"
+  }
+}
+```
+
+Accepted aliases:
+
+- `sessionID` / `id` for `sessionId`
+- `message` / `prompt` for `text`
+
+`mode` behavior:
+
+- `promptAsync` (default): enqueue immediately and return
+- `prompt`: wait for synchronous prompt execution
+
+#### Curl example
+
+```bash
+curl -X POST "http://127.0.0.1:8787/webhook/session-message" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer replace-with-random-secret" \
+  -d '{
+    "sessionId": "ses_abc123",
+    "text": "请继续处理当前问题"
+  }'
+```
 
 ### Supported template tokens
 

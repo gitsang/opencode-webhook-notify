@@ -1,6 +1,16 @@
 import type { Plugin } from "@opencode-ai/plugin";
 
 type NotificationKind = "idle" | "permission";
+type InboundDispatchMode = "prompt" | "promptAsync";
+
+interface NormalizedInboundWebhookConfig {
+  enabled: boolean;
+  host: string;
+  port: number;
+  path: string;
+  token?: string;
+  mode: InboundDispatchMode;
+}
 
 interface WebhookEventConfig {
   headers?: Record<string, string>;
@@ -11,10 +21,36 @@ interface WebhookNotifyConfig {
   enabled?: boolean;
   webhookUrl?: string;
   timeoutMs?: number;
+  inbound?: NormalizedInboundWebhookConfig;
   events?: {
     idle?: WebhookEventConfig;
     permission?: WebhookEventConfig;
   };
+}
+
+interface InboundWebhookPayload {
+  sessionID?: unknown;
+  sessionId?: unknown;
+  id?: unknown;
+  text?: unknown;
+  message?: unknown;
+  prompt?: unknown;
+  noReply?: unknown;
+  agent?: unknown;
+  model?: unknown;
+}
+
+interface InboundModelSelection {
+  providerID: string;
+  modelID: string;
+}
+
+interface InboundSessionMessage {
+  sessionId: string;
+  text: string;
+  noReply?: boolean;
+  agent?: string;
+  model?: InboundModelSelection;
 }
 
 interface SessionModelLimit {
@@ -99,9 +135,24 @@ interface NotificationContext {
 }
 
 const DEFAULT_CONFIG_PATH = `${Bun.env.HOME ?? ""}/.config/opencode/opencode-webhook-notify.json`;
+const DEFAULT_INBOUND_HOST = "127.0.0.1";
+const DEFAULT_INBOUND_PORT = 8787;
+const DEFAULT_INBOUND_PATH = "/webhook/session-message";
+const MAX_INBOUND_BODY_BYTES = 1024 * 1024;
+
+let inboundServerState:
+  | {
+      key: string;
+      server: {
+        stop: (closeActiveConnections?: boolean) => void;
+      };
+    }
+  | undefined;
 
 export const WebhookNotificationPlugin: Plugin = async ({ client, project }) => {
-  console.log("WebHook Notification Plugin initialized!")
+  console.log("WebHook Notification Plugin initialized!");
+
+  await initializeInboundWebhookServer(client, project);
 
   return {
     event: async ({ event }) => {
@@ -192,10 +243,79 @@ async function handleNotification(
   }
 }
 
+async function initializeInboundWebhookServer(client: unknown, project: unknown): Promise<void> {
+  if (typeof Bun === "undefined" || typeof Bun.serve !== "function") {
+    return;
+  }
+
+  const config = await loadConfig(project);
+  const inbound = config.inbound;
+
+  if (!inbound?.enabled) {
+    return;
+  }
+
+  const sessionClient = getSessionClient(client);
+  if (!sessionClient) {
+    console.warn("Webhook Notification Plugin: unable to resolve session client for inbound webhook server.");
+    return;
+  }
+
+  if (typeof sessionClient.prompt !== "function" && typeof sessionClient.promptAsync !== "function") {
+    console.warn("Webhook Notification Plugin: inbound webhook server requires session.prompt or session.promptAsync.");
+    return;
+  }
+
+  const serverKey = `${inbound.host}:${inbound.port}${inbound.path}`;
+  if (inboundServerState?.key === serverKey) {
+    return;
+  }
+
+  if (inboundServerState) {
+    inboundServerState.server.stop(true);
+    inboundServerState = undefined;
+  }
+
+  const server = Bun.serve({
+    hostname: inbound.host,
+    port: inbound.port,
+    fetch: async (request) => {
+      return handleInboundWebhookRequest(request, inbound, sessionClient);
+    },
+  });
+
+  inboundServerState = {
+    key: serverKey,
+    server,
+  };
+
+  console.log(
+    `Webhook Notification Plugin inbound endpoint listening on http://${inbound.host}:${inbound.port}${inbound.path}`,
+  );
+}
+
 function getSessionClient(client: unknown):
   | {
       get: (args: { path: { id: string } }) => Promise<unknown>;
       messages: (args: { path: { id: string } }) => Promise<unknown>;
+      prompt?: (args: {
+        path: { id: string };
+        body: {
+          parts: Array<{ type: "text"; text: string }>;
+          noReply?: boolean;
+          agent?: string;
+          model?: { providerID: string; modelID: string };
+        };
+      }) => Promise<unknown>;
+      promptAsync?: (args: {
+        path: { id: string };
+        body: {
+          parts: Array<{ type: "text"; text: string }>;
+          noReply?: boolean;
+          agent?: string;
+          model?: { providerID: string; modelID: string };
+        };
+      }) => Promise<unknown>;
     }
   | undefined {
   if (!isRecord(client)) {
@@ -209,6 +329,8 @@ function getSessionClient(client: unknown):
 
   const get = maybeSession.get;
   const messages = maybeSession.messages;
+  const prompt = maybeSession.prompt;
+  const promptAsync = maybeSession.promptAsync;
 
   if (typeof get !== "function" || typeof messages !== "function") {
     return undefined;
@@ -217,6 +339,14 @@ function getSessionClient(client: unknown):
   return {
     get: (args) => get.call(maybeSession, args) as Promise<unknown>,
     messages: (args) => messages.call(maybeSession, args) as Promise<unknown>,
+    prompt:
+      typeof prompt === "function"
+        ? (args) => prompt.call(maybeSession, args) as Promise<unknown>
+        : undefined,
+    promptAsync:
+      typeof promptAsync === "function"
+        ? (args) => promptAsync.call(maybeSession, args) as Promise<unknown>
+        : undefined,
   };
 }
 
@@ -237,8 +367,297 @@ function normalizeConfig(input: Record<string, unknown>): WebhookNotifyConfig {
     enabled: typeof input.enabled === "boolean" ? input.enabled : true,
     webhookUrl: typeof input.webhookUrl === "string" ? input.webhookUrl : undefined,
     timeoutMs: typeof input.timeoutMs === "number" ? input.timeoutMs : undefined,
+    inbound: normalizeInboundConfig(input.inbound),
     events,
   };
+}
+
+function normalizeInboundConfig(input: unknown): NormalizedInboundWebhookConfig | undefined {
+  if (!isRecord(input)) {
+    return undefined;
+  }
+
+  const enabled = input.enabled === true;
+  const host = typeof input.host === "string" && input.host.trim().length > 0
+    ? input.host.trim()
+    : DEFAULT_INBOUND_HOST;
+  const port =
+    typeof input.port === "number" && Number.isInteger(input.port) && input.port >= 1 && input.port <= 65535
+      ? input.port
+      : DEFAULT_INBOUND_PORT;
+  const path = normalizeInboundPath(input.path);
+  const token = typeof input.token === "string" && input.token.length > 0 ? input.token : undefined;
+  const mode: InboundDispatchMode = input.mode === "prompt" ? "prompt" : "promptAsync";
+
+  return {
+    enabled,
+    host,
+    port,
+    path,
+    token,
+    mode,
+  };
+}
+
+function normalizeInboundPath(pathLike: unknown): string {
+  if (typeof pathLike !== "string" || pathLike.trim().length === 0) {
+    return DEFAULT_INBOUND_PATH;
+  }
+
+  const trimmed = pathLike.trim();
+  if (trimmed === "/") {
+    return trimmed;
+  }
+
+  return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+}
+
+async function handleInboundWebhookRequest(
+  request: Request,
+  inboundConfig: NormalizedInboundWebhookConfig,
+  sessionClient: {
+    prompt?: (args: {
+      path: { id: string };
+      body: {
+        parts: Array<{ type: "text"; text: string }>;
+        noReply?: boolean;
+        agent?: string;
+        model?: { providerID: string; modelID: string };
+      };
+    }) => Promise<unknown>;
+    promptAsync?: (args: {
+      path: { id: string };
+      body: {
+        parts: Array<{ type: "text"; text: string }>;
+        noReply?: boolean;
+        agent?: string;
+        model?: { providerID: string; modelID: string };
+      };
+    }) => Promise<unknown>;
+  },
+): Promise<Response> {
+  const url = new URL(request.url);
+
+  if (url.pathname !== inboundConfig.path) {
+    return new Response("Not Found", { status: 404 });
+  }
+
+  if (request.method !== "POST") {
+    return jsonResponse({ ok: false, error: "Method Not Allowed" }, 405);
+  }
+
+  if (!isJsonContentType(request)) {
+    return jsonResponse({ ok: false, error: "Unsupported Media Type" }, 415);
+  }
+
+  if (!isInboundBodySizeAllowed(request)) {
+    return jsonResponse({ ok: false, error: "Payload Too Large" }, 413);
+  }
+
+  if (!isInboundRequestAuthorized(request, inboundConfig.token)) {
+    return jsonResponse({ ok: false, error: "Unauthorized" }, 401);
+  }
+
+  const payload = await parseInboundPayload(request);
+  if (!payload) {
+    return jsonResponse({ ok: false, error: "Invalid JSON payload" }, 400);
+  }
+
+  const parsed = parseInboundSessionMessage(payload);
+  if (!parsed.ok) {
+    return jsonResponse({ ok: false, error: parsed.error }, 400);
+  }
+
+  try {
+    await dispatchInboundMessage(sessionClient, parsed.data, inboundConfig.mode);
+    return jsonResponse({ ok: true, sessionId: parsed.data.sessionId }, 200);
+  } catch (error) {
+    console.error("Webhook Notification Plugin inbound dispatch error:", error);
+    return jsonResponse({ ok: false, error: "Failed to dispatch session message" }, 500);
+  }
+}
+
+function isInboundRequestAuthorized(request: Request, token: string | undefined): boolean {
+  if (!token) {
+    return true;
+  }
+
+  const authHeader = request.headers.get("authorization");
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    return secureTokenEquals(authHeader.slice("Bearer ".length).trim(), token);
+  }
+
+  const tokenHeader = request.headers.get("x-webhook-token");
+  return tokenHeader ? secureTokenEquals(tokenHeader, token) : false;
+}
+
+function secureTokenEquals(left: string, right: string): boolean {
+  const encoder = new TextEncoder();
+  const leftBytes = encoder.encode(left);
+  const rightBytes = encoder.encode(right);
+  const maxLength = Math.max(leftBytes.length, rightBytes.length);
+
+  let diff = leftBytes.length ^ rightBytes.length;
+  for (let index = 0; index < maxLength; index += 1) {
+    diff |= (leftBytes[index] ?? 0) ^ (rightBytes[index] ?? 0);
+  }
+
+  return diff === 0;
+}
+
+function isJsonContentType(request: Request): boolean {
+  const contentType = request.headers.get("content-type");
+  if (!contentType) {
+    return false;
+  }
+
+  const [mimeType = ""] = contentType.split(";");
+  return mimeType.trim().toLowerCase() === "application/json";
+}
+
+function isInboundBodySizeAllowed(request: Request): boolean {
+  const contentLength = request.headers.get("content-length");
+  if (!contentLength) {
+    return true;
+  }
+
+  const bytes = Number(contentLength);
+  if (!Number.isFinite(bytes) || bytes < 0) {
+    return false;
+  }
+
+  return bytes <= MAX_INBOUND_BODY_BYTES;
+}
+
+async function parseInboundPayload(request: Request): Promise<InboundWebhookPayload | undefined> {
+  try {
+    const parsed = await request.json();
+    return isRecord(parsed) ? (parsed as InboundWebhookPayload) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function parseInboundSessionMessage(
+  payload: InboundWebhookPayload,
+): { ok: true; data: InboundSessionMessage } | { ok: false; error: string } {
+  const sessionId = firstNonEmptyString(payload.sessionId, payload.sessionID, payload.id);
+  if (!sessionId) {
+    return { ok: false, error: "Missing sessionId" };
+  }
+
+  const text = firstNonEmptyString(payload.text, payload.message, payload.prompt);
+  if (!text) {
+    return { ok: false, error: "Missing text (or message/prompt)" };
+  }
+
+  const model = parseInboundModelSelection(payload.model);
+
+  return {
+    ok: true,
+    data: {
+      sessionId,
+      text,
+      noReply: typeof payload.noReply === "boolean" ? payload.noReply : undefined,
+      agent: typeof payload.agent === "string" && payload.agent.length > 0 ? payload.agent : undefined,
+      model,
+    },
+  };
+}
+
+function parseInboundModelSelection(input: unknown): InboundModelSelection | undefined {
+  if (!isRecord(input)) {
+    return undefined;
+  }
+
+  const providerID = typeof input.providerID === "string" ? input.providerID : undefined;
+  const modelID = typeof input.modelID === "string" ? input.modelID : undefined;
+
+  if (!providerID || !modelID) {
+    return undefined;
+  }
+
+  return { providerID, modelID };
+}
+
+async function dispatchInboundMessage(
+  sessionClient: {
+    prompt?: (args: {
+      path: { id: string };
+      body: {
+        parts: Array<{ type: "text"; text: string }>;
+        noReply?: boolean;
+        agent?: string;
+        model?: { providerID: string; modelID: string };
+      };
+    }) => Promise<unknown>;
+    promptAsync?: (args: {
+      path: { id: string };
+      body: {
+        parts: Array<{ type: "text"; text: string }>;
+        noReply?: boolean;
+        agent?: string;
+        model?: { providerID: string; modelID: string };
+      };
+    }) => Promise<unknown>;
+  },
+  message: InboundSessionMessage,
+  mode: InboundDispatchMode,
+): Promise<void> {
+  const body: {
+    parts: Array<{ type: "text"; text: string }>;
+    noReply?: boolean;
+    agent?: string;
+    model?: { providerID: string; modelID: string };
+  } = {
+    parts: [{ type: "text", text: message.text }],
+  };
+
+  if (typeof message.noReply === "boolean") {
+    body.noReply = message.noReply;
+  }
+  if (message.agent) {
+    body.agent = message.agent;
+  }
+  if (message.model) {
+    body.model = message.model;
+  }
+
+  if (mode === "prompt" && typeof sessionClient.prompt === "function") {
+    await sessionClient.prompt({ path: { id: message.sessionId }, body });
+    return;
+  }
+
+  if (typeof sessionClient.promptAsync === "function") {
+    await sessionClient.promptAsync({ path: { id: message.sessionId }, body });
+    return;
+  }
+
+  if (typeof sessionClient.prompt === "function") {
+    await sessionClient.prompt({ path: { id: message.sessionId }, body });
+    return;
+  }
+
+  throw new Error("session prompt API is not available");
+}
+
+function firstNonEmptyString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value;
+    }
+  }
+
+  return undefined;
+}
+
+function jsonResponse(payload: JsonValue, status: number): Response {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
 }
 
 function normalizeEventConfig(input: unknown): WebhookEventConfig | undefined {
