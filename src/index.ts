@@ -1,5 +1,18 @@
 import type { Plugin } from "@opencode-ai/plugin";
 
+async function getPackageVersion(): Promise<string> {
+  try {
+    const packageUrl = import.meta.resolve("../package.json");
+    const packageFile = Bun.file(new URL(packageUrl));
+    const pkg = (await packageFile.json()) as { version?: string };
+    return pkg.version ?? "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+const PACKAGE_VERSION = await getPackageVersion();
+
 type NotificationKind = "idle" | "permission";
 
 interface WebhookEventConfig {
@@ -104,7 +117,7 @@ interface NotificationContext {
 const DEFAULT_CONFIG_PATH = `${Bun.env.HOME ?? ""}/.config/opencode/opencode-webhook-notify.json`;
 
 export const WebhookNotificationPlugin: Plugin = async ({ client, project, directory }) => {
-  console.log("WebHook Notification Plugin v0.1.2 initialized!")
+  console.log(`WebHook Notification Plugin v${PACKAGE_VERSION} initialized!`)
 
   return {
     event: async ({ event }) => {
