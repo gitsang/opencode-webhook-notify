@@ -67,6 +67,8 @@ If `events.<event>.headers` or `events.<event>.body` is missing, the plugin fall
 - `{{description}}`
 - `{{assistant.text}}`
 - `{{session.id}}`
+- `{{session.name}}`
+- `{{project.path}}`
 - `{{context.usage}}`
 - `{{context.usagePercent}}`
 - `{{tokens.total}}`
