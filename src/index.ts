@@ -27,7 +27,7 @@ interface SessionModel {
 }
 
 interface SessionData {
-  name?: string;
+  title?: string;
   model?: SessionModel;
 }
 
@@ -103,7 +103,7 @@ interface NotificationContext {
 
 const DEFAULT_CONFIG_PATH = `${Bun.env.HOME ?? ""}/.config/opencode/opencode-webhook-notify.json`;
 
-export const WebhookNotificationPlugin: Plugin = async ({ client, project }) => {
+export const WebhookNotificationPlugin: Plugin = async ({ client, project, directory }) => {
   console.log("WebHook Notification Plugin v0.1.2 initialized!")
 
   return {
@@ -115,9 +115,9 @@ export const WebhookNotificationPlugin: Plugin = async ({ client, project }) => 
       const eventType = String(event.type);
 
       if (eventType === "session.idle") {
-        await handleNotification(client, project, event, "idle");
+        await handleNotification(client, project, directory, event, "idle");
       } else if (eventType === "permission.asked") {
-        await handleNotification(client, project, event, "permission");
+        await handleNotification(client, project, directory, event, "permission");
       }
     },
   };
@@ -126,6 +126,7 @@ export const WebhookNotificationPlugin: Plugin = async ({ client, project }) => 
 async function handleNotification(
   client: unknown,
   project: unknown,
+  directory: string,
   event: EventLike,
   type: NotificationKind,
 ): Promise<void> {
@@ -174,8 +175,8 @@ async function handleNotification(
       description,
       color,
       sessionId,
-      sessionName: session?.name ?? "",
-      projectPath: getProjectPath(project),
+      sessionName: session?.title ?? "",
+      projectPath: directory,
       contextUsage: details.contextUsage,
       contextUsagePercent: details.contextUsagePercent,
       totalTokens: details.totalTokens,
@@ -501,9 +502,9 @@ function getContextValue(context: NotificationContext, tokenName: string): strin
       return context.assistantText;
     case "session.id":
       return context.sessionId;
-    case "session.name":
+    case "session.title":
       return context.sessionName;
-    case "project.path":
+    case "directory":
       return context.projectPath;
     case "context.usage":
       return context.contextUsage;
@@ -566,19 +567,6 @@ function unwrapData<T>(response: unknown): T | undefined {
   }
 
   return response as T;
-}
-
-function getProjectPath(project: unknown): string {
-  if (!isRecord(project)) {
-    return "";
-  }
-
-  const path = project.path;
-  if (typeof path === "string") {
-    return path;
-  }
-
-  return "";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
