@@ -2,6 +2,14 @@ import type { Plugin } from "@opencode-ai/plugin";
 
 async function getPackageVersion(): Promise<string> {
   try {
+    const result = Bun.spawnSync(["git", "describe", "--tags", "--always", "--dirty"]);
+    if (result.exitCode === 0) {
+      const output = result.stdout.toString().trim();
+      return output.startsWith("v") ? output.slice(1) : output;
+    }
+  } catch {}
+
+  try {
     const packageUrl = import.meta.resolve("../package.json");
     const packageFile = Bun.file(new URL(packageUrl));
     const pkg = (await packageFile.json()) as { version?: string };
