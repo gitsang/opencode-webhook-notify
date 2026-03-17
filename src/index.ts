@@ -1,10 +1,15 @@
 import type { Plugin } from "@opencode-ai/plugin";
 
+const PLUGIN_DIR = import.meta.dir;
+
 async function getPackageVersion(): Promise<string> {
   try {
-    const result = Bun.spawnSync(["git", "describe", "--tags", "--always", "--dirty"]);
+    const result = Bun.spawnSync(["git", "describe", "--tags", "--always", "--dirty"], {
+      cwd: PLUGIN_DIR,
+    });
     if (result.exitCode === 0) {
-      return result.stdout.toString().trim();
+      const output = result.stdout.toString().trim();
+      return output.startsWith("v") ? output.slice(1) : output;
     }
   } catch {}
 
