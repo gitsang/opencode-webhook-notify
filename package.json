@@ -1,6 +1,6 @@
 {
   "name": "opencode-webhook-notify",
-  "version": "0.1.2",
+  "version": "0.0.0",
   "description": "OpenCode plugin that sends customizable webhook notifications on session completion and permission requests.",
   "main": "src/index.ts",
   "module": "src/index.ts",
@@ -26,6 +26,8 @@
     "typescript": "latest"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "update-version": "bun scripts/update-version.ts",
+    "prepublishOnly": "bun run update-version"
   }
 }
