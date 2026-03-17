@@ -8,8 +8,7 @@ async function getPackageVersion(): Promise<string> {
       cwd: PLUGIN_DIR,
     });
     if (result.exitCode === 0) {
-      const output = result.stdout.toString().trim();
-      return output.startsWith("v") ? output.slice(1) : output;
+      return result.stdout.toString().trim();
     }
   } catch {}
 
