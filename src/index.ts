@@ -4,8 +4,7 @@ async function getPackageVersion(): Promise<string> {
   try {
     const result = Bun.spawnSync(["git", "describe", "--tags", "--always", "--dirty"]);
     if (result.exitCode === 0) {
-      const output = result.stdout.toString().trim();
-      return output.startsWith("v") ? output.slice(1) : output;
+      return result.stdout.toString().trim();
     }
   } catch {}
 
@@ -125,7 +124,7 @@ interface NotificationContext {
 const DEFAULT_CONFIG_PATH = `${Bun.env.HOME ?? ""}/.config/opencode/opencode-webhook-notify.json`;
 
 export const WebhookNotificationPlugin: Plugin = async ({ client, project, directory }) => {
-  console.log(`WebHook Notification Plugin v${PACKAGE_VERSION} initialized!`)
+  console.log(`WebHook Notification Plugin ${PACKAGE_VERSION} initialized!`)
 
   return {
     event: async ({ event }) => {
