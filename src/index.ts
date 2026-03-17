@@ -52,6 +52,8 @@ interface SessionModel {
 
 interface SessionData {
   title?: string;
+  parentID?: string | null;
+  parentId?: string | null;
   model?: SessionModel;
 }
 
@@ -175,12 +177,14 @@ async function handleNotification(
       return;
     }
 
-    const [sessionRes, messagesRes] = await Promise.all([
-      sessionClient.get({ path: { id: sessionId } }),
-      sessionClient.messages({ path: { id: sessionId } }),
-    ]);
-
+    const sessionRes = await sessionClient.get({ path: { id: sessionId } });
     const session = unwrapData<SessionData>(sessionRes);
+    if (type === "idle" && isSubagentSession(event.properties, session)) {
+      return;
+    }
+
+    const messagesRes = await sessionClient.messages({ path: { id: sessionId } });
+
     const messages = unwrapData<SessionMessage[]>(messagesRes) ?? [];
     const details = analyzeMessages(messages, session, type);
 
@@ -328,6 +332,22 @@ function getSessionId(properties: Record<string, unknown> | undefined): string |
   }
 
   return undefined;
+}
+
+function isSubagentSession(
+  properties: Record<string, unknown> | undefined,
+  session: SessionData | undefined,
+): boolean {
+  const parentIdCandidates = [
+    properties?.parentID,
+    properties?.parentId,
+    properties?.parentSessionID,
+    properties?.parentSessionId,
+    session?.parentID,
+    session?.parentId,
+  ];
+
+  return parentIdCandidates.some((value) => typeof value === "string" && value.length > 0);
 }
 
 function analyzeMessages(messages: SessionMessage[], session: SessionData | undefined, type: NotificationKind) {

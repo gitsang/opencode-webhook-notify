@@ -6,7 +6,7 @@ OpenCode plugin that sends customizable webhook notifications on session complet
 
 Sends webhook notifications for:
 
-- `session.idle` (response/session completion)
+- `session.idle` (response/session completion, excludes subagent child sessions)
 - `permission.asked` (permission required)
 
 ## Installation
