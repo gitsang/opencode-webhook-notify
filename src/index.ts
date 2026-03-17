@@ -104,7 +104,7 @@ interface NotificationContext {
 const DEFAULT_CONFIG_PATH = `${Bun.env.HOME ?? ""}/.config/opencode/opencode-webhook-notify.json`;
 
 export const WebhookNotificationPlugin: Plugin = async ({ client, project }) => {
-  console.log("WebHook Notification Plugin initialized!")
+  console.log("WebHook Notification Plugin v0.1.2 initialized!")
 
   return {
     event: async ({ event }) => {
