@@ -125,6 +125,8 @@ curl -X POST "http://127.0.0.1:8787/webhook/session-message" \
 - `{{description}}`
 - `{{assistant.text}}`
 - `{{session.id}}`
+- `{{session.name}}`
+- `{{project.path}}`
 - `{{context.usage}}`
 - `{{context.usagePercent}}`
 - `{{tokens.total}}`

@@ -63,6 +63,7 @@ interface SessionModel {
 }
 
 interface SessionData {
+  name?: string;
   model?: SessionModel;
 }
 
@@ -125,6 +126,8 @@ interface NotificationContext {
   description: string;
   color: number;
   sessionId: string;
+  sessionName: string;
+  projectPath: string;
   contextUsage: string;
   contextUsagePercent: number | null;
   totalTokens: number;
@@ -222,6 +225,8 @@ async function handleNotification(
       description,
       color,
       sessionId,
+      sessionName: session?.name ?? "",
+      projectPath: getProjectPath(project),
       contextUsage: details.contextUsage,
       contextUsagePercent: details.contextUsagePercent,
       totalTokens: details.totalTokens,
@@ -915,6 +920,10 @@ function getContextValue(context: NotificationContext, tokenName: string): strin
       return context.assistantText;
     case "session.id":
       return context.sessionId;
+    case "session.name":
+      return context.sessionName;
+    case "project.path":
+      return context.projectPath;
     case "context.usage":
       return context.contextUsage;
     case "context.usagePercent":
@@ -976,6 +985,19 @@ function unwrapData<T>(response: unknown): T | undefined {
   }
 
   return response as T;
+}
+
+function getProjectPath(project: unknown): string {
+  if (!isRecord(project)) {
+    return "";
+  }
+
+  const path = project.path;
+  if (typeof path === "string") {
+    return path;
+  }
+
+  return "";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
