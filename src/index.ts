@@ -4,9 +4,12 @@ const PLUGIN_DIR = import.meta.dir;
 
 async function getPackageVersion(): Promise<string> {
   try {
-    const result = Bun.spawnSync(["git", "describe", "--tags", "--always", "--dirty"], {
-      cwd: PLUGIN_DIR,
-    });
+    const result = Bun.spawnSync(
+      ["git", "describe", "--tags", "--always", "--dirty"],
+      {
+        cwd: PLUGIN_DIR,
+      },
+    );
     if (result.exitCode === 0) {
       return result.stdout.toString().trim();
     }
@@ -35,6 +38,7 @@ interface WebhookNotifyConfig {
   enabled?: boolean;
   webhookUrl?: string;
   timeoutMs?: number;
+  logPath?: string;
   events?: {
     idle?: WebhookEventConfig;
     permission?: WebhookEventConfig;
@@ -97,13 +101,7 @@ interface EventLike {
   properties?: Record<string, unknown>;
 }
 
-type JsonValue =
-  | string
-  | number
-  | boolean
-  | null
-  | JsonObject
-  | JsonValue[];
+type JsonValue = string | number | boolean | null | JsonObject | JsonValue[];
 
 interface JsonObject {
   [key: string]: JsonValue;
@@ -128,9 +126,14 @@ interface NotificationContext {
 }
 
 const DEFAULT_CONFIG_PATH = `${Bun.env.HOME ?? ""}/.config/opencode/opencode-webhook-notify.json`;
+const DEFAULT_LOG_PATH = "/var/log/opencode-webhook-notify.log";
 
-export const WebhookNotificationPlugin: Plugin = async ({ client, project, directory }) => {
-  console.log(`WebHook Notification Plugin ${PACKAGE_VERSION} initialized!`)
+export const WebhookNotificationPlugin: Plugin = async ({
+  client,
+  project,
+  directory,
+}) => {
+  console.log(`WebHook Notification Plugin ${PACKAGE_VERSION} initialized!`);
 
   return {
     event: async ({ event }) => {
@@ -143,7 +146,13 @@ export const WebhookNotificationPlugin: Plugin = async ({ client, project, direc
       if (eventType === "session.idle") {
         await handleNotification(client, project, directory, event, "idle");
       } else if (eventType === "permission.asked") {
-        await handleNotification(client, project, directory, event, "permission");
+        await handleNotification(
+          client,
+          project,
+          directory,
+          event,
+          "permission",
+        );
       }
     },
   };
@@ -183,12 +192,15 @@ async function handleNotification(
       return;
     }
 
-    const messagesRes = await sessionClient.messages({ path: { id: sessionId } });
+    const messagesRes = await sessionClient.messages({
+      path: { id: sessionId },
+    });
 
     const messages = unwrapData<SessionMessage[]>(messagesRes) ?? [];
     const details = analyzeMessages(messages, session, type);
 
-    const title = type === "permission" ? "Permission Required" : "Response Completed";
+    const title =
+      type === "permission" ? "Permission Required" : "Response Completed";
     const description =
       type === "permission"
         ? "OpenCode is waiting for your authorization before it can continue."
@@ -269,8 +281,11 @@ function normalizeConfig(input: Record<string, unknown>): WebhookNotifyConfig {
 
   return {
     enabled: typeof input.enabled === "boolean" ? input.enabled : true,
-    webhookUrl: typeof input.webhookUrl === "string" ? input.webhookUrl : undefined,
-    timeoutMs: typeof input.timeoutMs === "number" ? input.timeoutMs : undefined,
+    webhookUrl:
+      typeof input.webhookUrl === "string" ? input.webhookUrl : undefined,
+    timeoutMs:
+      typeof input.timeoutMs === "number" ? input.timeoutMs : undefined,
+    logPath: typeof input.logPath === "string" ? input.logPath : undefined,
     events,
   };
 }
@@ -283,7 +298,9 @@ function normalizeEventConfig(input: unknown): WebhookEventConfig | undefined {
   const headers = isRecord(input.headers)
     ? Object.fromEntries(
         Object.entries(input.headers)
-          .filter((entry): entry is [string, string] => typeof entry[1] === "string")
+          .filter(
+            (entry): entry is [string, string] => typeof entry[1] === "string",
+          )
           .map(([key, value]) => [key, value]),
       )
     : undefined;
@@ -297,7 +314,9 @@ function normalizeEventConfig(input: unknown): WebhookEventConfig | undefined {
   return { headers, body };
 }
 
-async function readFileConfig(configPath: string): Promise<WebhookNotifyConfig> {
+async function readFileConfig(
+  configPath: string,
+): Promise<WebhookNotifyConfig> {
   if (typeof Bun === "undefined") {
     return {};
   }
@@ -319,12 +338,18 @@ async function readFileConfig(configPath: string): Promise<WebhookNotifyConfig> 
   }
 }
 
-function getSessionId(properties: Record<string, unknown> | undefined): string | undefined {
+function getSessionId(
+  properties: Record<string, unknown> | undefined,
+): string | undefined {
   if (!properties) {
     return undefined;
   }
 
-  const candidates = [properties.sessionID, properties.sessionId, properties.id];
+  const candidates = [
+    properties.sessionID,
+    properties.sessionId,
+    properties.id,
+  ];
   for (const candidate of candidates) {
     if (typeof candidate === "string" && candidate.length > 0) {
       return candidate;
@@ -347,16 +372,24 @@ function isSubagentSession(
     session?.parentId,
   ];
 
-  return parentIdCandidates.some((value) => typeof value === "string" && value.length > 0);
+  return parentIdCandidates.some(
+    (value) => typeof value === "string" && value.length > 0,
+  );
 }
 
-function analyzeMessages(messages: SessionMessage[], session: SessionData | undefined, type: NotificationKind) {
+function analyzeMessages(
+  messages: SessionMessage[],
+  session: SessionData | undefined,
+  type: NotificationKind,
+) {
   let lastText = "Response completed.";
   let modelName = session?.model?.name ?? "Unknown";
   let totalTokens = 0;
   let pendingCommand = "";
 
-  const assistantMessages = messages.filter((message) => getRole(message) === "assistant");
+  const assistantMessages = messages.filter(
+    (message) => getRole(message) === "assistant",
+  );
 
   for (const message of assistantMessages) {
     const tokens = message.info?.tokens ?? message.tokens;
@@ -399,7 +432,10 @@ function analyzeMessages(messages: SessionMessage[], session: SessionData | unde
     totalTokens,
     pendingCommand,
     contextUsagePercent,
-    contextUsage: contextUsagePercent === null ? "N/A" : `${contextUsagePercent.toFixed(2)}%`,
+    contextUsage:
+      contextUsagePercent === null
+        ? "N/A"
+        : `${contextUsagePercent.toFixed(2)}%`,
   };
 }
 
@@ -407,7 +443,9 @@ function getRole(message: SessionMessage): string | undefined {
   return message.info?.role ?? message.role;
 }
 
-function getPendingCommand(parts: MessagePart[] | undefined): string | undefined {
+function getPendingCommand(
+  parts: MessagePart[] | undefined,
+): string | undefined {
   if (!parts) {
     return undefined;
   }
@@ -498,11 +536,17 @@ function renderHeaders(
   }
 
   return Object.fromEntries(
-    Object.entries(headers).map(([key, value]) => [key, replaceTokens(value, context)]),
+    Object.entries(headers).map(([key, value]) => [
+      key,
+      replaceTokens(value, context),
+    ]),
   );
 }
 
-function renderTemplate(template: JsonValue, context: NotificationContext): JsonValue {
+function renderTemplate(
+  template: JsonValue,
+  context: NotificationContext,
+): JsonValue {
   if (typeof template === "string") {
     return replaceTokens(template, context);
   }
@@ -523,16 +567,22 @@ function renderTemplate(template: JsonValue, context: NotificationContext): Json
 }
 
 function replaceTokens(input: string, context: NotificationContext): string {
-  return input.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (_match, tokenName: string) => {
-    const value = getContextValue(context, tokenName);
-    if (value === undefined || value === null) {
-      return "";
-    }
-    return String(value);
-  });
+  return input.replace(
+    /\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g,
+    (_match, tokenName: string) => {
+      const value = getContextValue(context, tokenName);
+      if (value === undefined || value === null) {
+        return "";
+      }
+      return String(value);
+    },
+  );
 }
 
-function getContextValue(context: NotificationContext, tokenName: string): string | number | null | undefined {
+function getContextValue(
+  context: NotificationContext,
+  tokenName: string,
+): string | number | null | undefined {
   switch (tokenName) {
     case "event.type":
       return context.eventType;
@@ -584,7 +634,8 @@ async function postWebhook(
   };
 
   const controller = new AbortController();
-  const timeout = config.timeoutMs && config.timeoutMs > 0 ? config.timeoutMs : 10000;
+  const timeout =
+    config.timeoutMs && config.timeoutMs > 0 ? config.timeoutMs : 10000;
   const timeoutId = setTimeout(() => controller.abort(), timeout);
 
   try {
@@ -598,7 +649,11 @@ async function postWebhook(
     if (!response.ok) {
       const responseBody = await response.text().catch(() => "");
       const details = responseBody ? ` - ${responseBody}` : "";
-      throw new Error(`HTTP ${response.status}${details}`);
+      const logPath = config.logPath ?? DEFAULT_LOG_PATH;
+      await writeLog(
+        logPath,
+        `Webhook request failed: HTTP ${response.status}${details}`,
+      );
     }
   } finally {
     clearTimeout(timeoutId);
@@ -636,6 +691,20 @@ function isJsonValue(value: unknown): value is JsonValue {
   }
 
   return false;
+}
+
+async function writeLog(logPath: string, message: string): Promise<void> {
+  try {
+    const timestamp = new Date().toISOString();
+    const logEntry = `[${timestamp}] ${message}\n`;
+    const logFile = Bun.file(logPath);
+    const existingContent = (await logFile.exists())
+      ? await logFile.text()
+      : "";
+    await Bun.write(logPath, existingContent + logEntry);
+  } catch (error) {
+    console.error("Failed to write log:", error);
+  }
 }
 
 function wait(ms: number): Promise<void> {
